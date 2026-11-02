@@ -18,7 +18,7 @@ Things you open often or recently move up the list. If you pick something for a 
 (e.g. "ch" → Chrome), it shows up first the next time you type that search.
 
 **Tray icon** (magnifying glass near the clock): left-click opens the bar; right-click has
-*Start with Windows*, *Edit settings…*, *Reload settings and rebuild index* and *Quit*.
+*Start with Windows*, *Settings…*, *Rebuild index* and *Quit*.
 
 ## Download
 
@@ -57,15 +57,18 @@ This builds an optimized copy into `%LOCALAPPDATA%\Programs\Spotlight` and start
 
 ## Settings
 
-Right-click the tray icon → **Edit settings…** opens `%APPDATA%\Spotlight\settings.json` in Notepad:
+Right-click the tray icon → **Settings…** (or run `Spotlight.exe --settings`). There you can:
 
-- `hotkey`: e.g. `"Ctrl+Space"`, `"Alt+Space"`, `"Ctrl+Shift+K"`
-- `folders`: which folders to index (default: Desktop, Documents, Downloads, Pictures, Videos, Music)
-- `excludeFolderNames`: folder names to skip anywhere (`node_modules`, `.git`, `bin`, ...)
-- `skipDotFolders`: skip folders starting with a dot
-- `maxResults`: how many results to show
+- record a new shortcut (click the box and press the keys; it warns you if another app already uses them)
+- choose which folders to search (default: Desktop, Documents, Downloads, Pictures, Videos, Music)
+- set how many results to show, and turn Start with Windows on or off
+- see how much is indexed and rebuild the index
 
-After saving, right-click the tray icon → **Reload settings and rebuild index**.
+Changes apply when you click **Save**.
+
+**Advanced:** the window's *Edit settings file* link opens `%APPDATA%\Spotlight\settings.json`, which also has
+`excludeFolderNames` (folder names skipped anywhere, like `node_modules` or `.git`) and `skipDotFolders`.
+After editing the file by hand, right-click the tray icon → **Rebuild index**.
 
 ## Where things are stored
 
@@ -91,7 +94,8 @@ C# / .NET 8 with WPF. Projects: `src\Spotlight` (the app) and `tests\Spotlight.T
 - `Indexing\AppIndex.cs`: apps from `shell:AppsFolder` (desktop + Store apps) and Start Menu shortcuts
 - `Indexing\FileIndex.cs`: folder scan, live updates via FileSystemWatcher, saved to disk
 - `Search\FuzzyMatcher.cs`, `Search\SearchEngine.cs`, `Search\UsageTracker.cs`: matching and ranking
-- `MainWindow.xaml`: the frosted search bar; `Interop\`: hotkey, tray icon, icons, acrylic
+- `MainWindow.xaml`: the frosted search bar; `SettingsWindow.xaml`: the settings window
+- `Interop\`: hotkey, tray icon, icons, acrylic
 
 ## Ideas for later
 

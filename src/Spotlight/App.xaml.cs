@@ -14,10 +14,13 @@ public partial class App : Application
     private Mutex? _instanceMutex;
     private EventWaitHandle? _showSignal;
     private EventWaitHandle? _quitSignal;
+    private EventWaitHandle? _settingsSignal;
     private RegisteredWaitHandle? _showWait;
     private RegisteredWaitHandle? _quitWait;
+    private RegisteredWaitHandle? _settingsWait;
 
     private MainWindow? _window;
+    private SettingsWindow? _settingsWindow;
     private AppIndex? _apps;
     private FileIndex? _files;
 
@@ -26,17 +29,20 @@ public partial class App : Application
         base.OnStartup(e);
         bool quit = e.Args.Any(a => a.Equals("--quit", StringComparison.OrdinalIgnoreCase));
         bool background = e.Args.Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
+        bool openSettings = e.Args.Any(a => a.Equals("--settings", StringComparison.OrdinalIgnoreCase));
 
-        // Only one copy runs. Starting it again opens the search bar (or quits it with --quit).
+        // Only one copy runs. Starting it again opens the search bar (or quits it with --quit,
+        // or opens the settings window with --settings).
         _instanceMutex = new Mutex(true, InstanceName + ".Instance", out bool isFirst);
         _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + ".Show");
         _quitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + ".Quit");
+        _settingsSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + ".Settings");
         if (!isFirst || quit)
         {
             if (!isFirst)
             {
                 Native.AllowSetForegroundWindow(Native.ASFW_ANY);
-                (quit ? _quitSignal : _showSignal).Set();
+                (quit ? _quitSignal : openSettings ? _settingsSignal : _showSignal).Set();
             }
             Shutdown();
             return;
@@ -64,25 +70,58 @@ public partial class App : Application
         _window = new MainWindow(engine, usage, settings);
         _window.RebuildRequested += Rebuild;
         _window.ExitRequested += ExitApp;
+        _window.SettingsRequested += OpenSettings;
         _window.Initialize();
 
         _apps.Refresh();
         _apps.StartWatching();
-        _files.ScanCompleted += () => Dispatcher.BeginInvoke(() => { if (!_window.IsVisible) TrimMemory(); });
+        _files.ScanCompleted += () => Dispatcher.BeginInvoke(() =>
+        {
+            _settingsWindow?.RefreshStatus();
+            if (!_window.IsVisible && _settingsWindow == null) TrimMemory();
+        });
         _files.Start();
 
         _showWait = ThreadPool.RegisterWaitForSingleObject(_showSignal, (_, _) => Dispatcher.BeginInvoke(() => _window.ShowLauncher()), null, Timeout.Infinite, false);
         _quitWait = ThreadPool.RegisterWaitForSingleObject(_quitSignal, (_, _) => Dispatcher.BeginInvoke(ExitApp), null, Timeout.Infinite, false);
+        _settingsWait = ThreadPool.RegisterWaitForSingleObject(_settingsSignal, (_, _) => Dispatcher.BeginInvoke(OpenSettings), null, Timeout.Infinite, false);
 
-        if (!background) _window.ShowLauncher();
+        if (openSettings) OpenSettings();
+        else if (!background) _window.ShowLauncher();
     }
 
-    private void Rebuild()
+    private void Rebuild() => ApplySettings(Settings.Load());
+
+    private void ApplySettings(Settings settings)
     {
-        var settings = Settings.Load();
         _window?.ApplySettings(settings);
         _apps?.Refresh();
         _files?.Rebuild(settings);
+    }
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(Settings.Load(), () =>
+        {
+            var (items, scanning) = _files!.Status;
+            return (items, _apps!.Apps.Length, scanning);
+        });
+        _settingsWindow.Saved += ApplySettings;
+        _settingsWindow.RebuildRequested += Rebuild;
+        _settingsWindow.CapturingHotkey += capturing => _window?.SuspendHotkey(capturing);
+        _settingsWindow.Closed += (_, _) =>
+        {
+            _settingsWindow = null;
+            _window?.ScheduleTrim();
+        };
+        _settingsWindow.Show();
+        _settingsWindow.Activate();
     }
 
     private void ExitApp()
@@ -90,6 +129,8 @@ public partial class App : Application
         Log.Write("exiting");
         _showWait?.Unregister(null);
         _quitWait?.Unregister(null);
+        _settingsWait?.Unregister(null);
+        _settingsWindow?.Close();
         _window?.Shutdown();
         _apps?.Dispose();
         _files?.Dispose();

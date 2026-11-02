@@ -95,6 +95,15 @@ public sealed class FileIndex : IDisposable
         }
     }
 
+    /// <summary>Number of indexed files and folders, and whether a scan is running (for the settings window).</summary>
+    public (int Items, bool Scanning) Status
+    {
+        get
+        {
+            lock (_lock) return (_dirs.Values.Sum(d => d.Items.Count), _scanning);
+        }
+    }
+
     public void Start() => RunInBackground(() =>
     {
         LoadCache();

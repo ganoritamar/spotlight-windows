@@ -29,6 +29,7 @@ public partial class MainWindow : Window
 
     public event Action? RebuildRequested;
     public event Action? ExitRequested;
+    public event Action? SettingsRequested;
 
     public MainWindow(SearchEngine engine, UsageTracker usage, Settings settings)
     {
@@ -132,6 +133,26 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Pauses the shortcut while the settings window records a new one.</summary>
+    public void SuspendHotkey(bool suspend)
+    {
+        if (suspend && _hotkeyRegistered)
+        {
+            Native.UnregisterHotKey(_hwnd, HotkeyId);
+            _hotkeyRegistered = false;
+        }
+        else if (!suspend && !_hotkeyRegistered)
+        {
+            RegisterHotkey();
+        }
+    }
+
+    /// <summary>Hands memory back a few seconds from now (e.g. after the settings window closes).</summary>
+    public void ScheduleTrim()
+    {
+        if (!IsVisible) _trimTimer.Start();
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HotkeyId)
@@ -151,13 +172,13 @@ public partial class MainWindow : Window
         new TrayMenuItem($"Open Spotlight\t{_settings.Hotkey}", ShowLauncher, IsDefault: true),
         TrayMenuItem.Separator,
         new TrayMenuItem("Start with Windows", () => StartupManager.SetEnabled(!StartupManager.IsEnabled), Checked: StartupManager.IsEnabled),
-        new TrayMenuItem("Edit settings…", OpenSettingsFile),
-        new TrayMenuItem("Reload settings and rebuild index", () => RebuildRequested?.Invoke()),
+        new TrayMenuItem("Settings…", () => SettingsRequested?.Invoke()),
+        new TrayMenuItem("Rebuild index", () => RebuildRequested?.Invoke()),
         TrayMenuItem.Separator,
         new TrayMenuItem("Quit Spotlight", () => ExitRequested?.Invoke()),
     };
 
-    private static void OpenSettingsFile()
+    internal static void OpenSettingsFile()
     {
         try
         {
