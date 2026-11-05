@@ -24,6 +24,11 @@ public partial class MainWindow : Window
     private IntPtr _hwnd;
     private TrayIcon? _tray;
     private bool _hotkeyRegistered;
+    private uint _hotkeyVk;
+    private bool _capturingNewHotkey; // settings window is recording a shortcut
+    private bool _pausedForGame;      // a game / fullscreen app is in front
+    private IntPtr _foregroundHook;
+    private Native.WinEventProc? _foregroundProc; // kept in a field so it isn't garbage-collected while hooked
     private bool _shuttingDown;
     private List<ResultItem> _results = new();
 
@@ -72,12 +77,66 @@ public partial class MainWindow : Window
         _tray.Clicked += ShowLauncher;
         _tray.MenuProvider = BuildTrayMenu;
         RegisterHotkey();
+
+        // Event-driven, not a timer: Windows tells us whenever another window comes to the front.
+        _foregroundProc = (_, _, _, _, _, _, _) => UpdateGamePause();
+        _foregroundHook = Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _foregroundProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS);
+        UpdateGamePause();
     }
 
     public void ApplySettings(Settings settings)
     {
         _settings = settings;
+        _pausedForGame = false;
         RegisterHotkey();
+        UpdateGamePause();
+    }
+
+    /// <summary>
+    /// While a game (or any fullscreen app) is in front, the shortcut is released entirely so the key
+    /// combination reaches the game, like PowerToys and Fluent Search do. It comes back as soon as
+    /// something else is in front.
+    /// </summary>
+    private void UpdateGamePause()
+    {
+        bool game = _settings.IgnoreHotkeyInFullscreen && GameDetector.IsFullscreenAppInFront(_hwnd);
+        if (game && !_pausedForGame)
+        {
+            _pausedForGame = true;
+            if (_hotkeyRegistered)
+            {
+                Native.UnregisterHotKey(_hwnd, HotkeyId);
+                _hotkeyRegistered = false;
+            }
+            Log.Write("fullscreen app in front, shortcut paused");
+        }
+        else if (!game && _pausedForGame)
+        {
+            _pausedForGame = false;
+            if (!_capturingNewHotkey) RegisterHotkey(quiet: true);
+            Log.Write("fullscreen app gone, shortcut resumed");
+        }
+    }
+
+    /// <summary>The shortcut fired while a game was in front (e.g. it went fullscreen without changing
+    /// the active window). Step aside and hand the key press to the game instead of eating it.</summary>
+    private void PassHotkeyToGame()
+    {
+        _pausedForGame = true;
+        if (_hotkeyRegistered)
+        {
+            Native.UnregisterHotKey(_hwnd, HotkeyId);
+            _hotkeyRegistered = false;
+        }
+        // The modifiers are still physically held, so re-sending just the key gives the game the full combination.
+        var input = new Native.INPUT
+        {
+            type = Native.INPUT_KEYBOARD,
+            u = new Native.InputUnion { ki = new Native.KEYBDINPUT { wVk = (ushort)_hotkeyVk } },
+        };
+        Native.SendInput(1, new[] { input }, Marshal.SizeOf<Native.INPUT>());
+        Log.Write("shortcut pressed in a fullscreen app, passed through");
     }
 
     private void ApplyBackdrop()
@@ -105,7 +164,7 @@ public partial class MainWindow : Window
         Log.Write(frosted ? "frosted backdrop on" : "solid background (frosted backdrop not available)");
     }
 
-    private void RegisterHotkey()
+    private void RegisterHotkey(bool quiet = false)
     {
         if (_hotkeyRegistered)
         {
@@ -121,11 +180,12 @@ public partial class MainWindow : Window
             Hotkey.TryParse(text, out hotkey);
         }
 
+        _hotkeyVk = hotkey.VirtualKey;
         _hotkeyRegistered = Native.RegisterHotKey(_hwnd, HotkeyId, hotkey.Modifiers | Native.MOD_NOREPEAT, hotkey.VirtualKey);
         if (!_hotkeyRegistered)
         {
             Log.Write($"hotkey {text} is taken by another app");
-            _tray?.ShowBalloon("Spotlight", $"{text} is already used by another app. Pick a different shortcut in settings.json, or click the tray icon.");
+            if (!quiet) _tray?.ShowBalloon("Spotlight", $"{text} is already used by another app. Pick a different shortcut in settings.json, or click the tray icon.");
         }
         else
         {
@@ -136,12 +196,13 @@ public partial class MainWindow : Window
     /// <summary>Pauses the shortcut while the settings window records a new one.</summary>
     public void SuspendHotkey(bool suspend)
     {
+        _capturingNewHotkey = suspend;
         if (suspend && _hotkeyRegistered)
         {
             Native.UnregisterHotKey(_hwnd, HotkeyId);
             _hotkeyRegistered = false;
         }
-        else if (!suspend && !_hotkeyRegistered)
+        else if (!suspend && !_hotkeyRegistered && !_pausedForGame)
         {
             RegisterHotkey();
         }
@@ -157,7 +218,8 @@ public partial class MainWindow : Window
     {
         if (msg == Native.WM_HOTKEY && wParam.ToInt32() == HotkeyId)
         {
-            ToggleLauncher();
+            if (_settings.IgnoreHotkeyInFullscreen && GameDetector.IsFullscreenAppInFront(_hwnd)) PassHotkeyToGame();
+            else ToggleLauncher();
             handled = true;
         }
         else if (_tray != null && _tray.HandleMessage(msg, wParam, lParam))
@@ -253,6 +315,7 @@ public partial class MainWindow : Window
     {
         _shuttingDown = true;
         if (_hotkeyRegistered) Native.UnregisterHotKey(_hwnd, HotkeyId);
+        if (_foregroundHook != IntPtr.Zero) Native.UnhookWinEvent(_foregroundHook);
         _tray?.Dispose();
         _icons.Dispose();
         Close();

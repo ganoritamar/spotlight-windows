@@ -123,6 +123,8 @@
                 CornerRadius="5" Background="#2D2D2D" BorderBrush="#454545" BorderThickness="1" Padding="14,8">
             <TextBlock x:Name="HotkeyText" FontSize="15" FontWeight="SemiBold" />
         </Border>
+        <CheckBox x:Name="FullscreenBox" Content="Ignore the shortcut while a game or fullscreen app is running"
+                  Margin="0,14,0,0" />
 
         <!-- Folders -->
         <TextBlock Text="Folders to search" Style="{StaticResource Heading}" Margin="0,26,0,3" />

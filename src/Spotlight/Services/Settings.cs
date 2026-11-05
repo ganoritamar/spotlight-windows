@@ -10,6 +10,9 @@ public sealed class Settings
     /// <summary>Global shortcut, e.g. "Alt+Space", "Ctrl+Space", "Ctrl+Shift+K".</summary>
     public string Hotkey { get; set; } = "Ctrl+Space";
 
+    /// <summary>Leave the shortcut to the app in front while a game or other fullscreen app is running.</summary>
+    public bool IgnoreHotkeyInFullscreen { get; set; } = true;
+
     /// <summary>Folders whose files are indexed (including everything inside them).</summary>
     public List<string> Folders { get; set; } = new();
 

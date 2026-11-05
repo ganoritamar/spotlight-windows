@@ -43,11 +43,59 @@ internal static class Native
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr GetModuleHandle(string? name);
 
+    // Re-sends the shortcut's key to a game when Spotlight steps aside (RegisterHotKey swallows it otherwise).
+    public const uint INPUT_KEYBOARD = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT { public uint type; public InputUnion u; }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi; // largest member, so the struct has the size Windows expects
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr dwExtraInfo; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+
+    // Fullscreen / game detection
+    public const int QUNS_RUNNING_D3D_FULL_SCREEN = 3, QUNS_PRESENTATION_MODE = 4;
+
+    [DllImport("shell32.dll")]
+    public static extern int SHQueryUserNotificationState(out int state);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+
+    // Foreground-change notifications (no polling: Windows calls us when the active window changes)
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003, WINEVENT_OUTOFCONTEXT = 0x0000, WINEVENT_SKIPOWNPROCESS = 0x0002;
+
+    public delegate void WinEventProc(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc proc, uint process, uint thread, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hook);
+
     // Windows / focus
     public const int ASFW_ANY = -1;
 
     public const int GWL_STYLE = -16;
-    public const long WS_SYSMENU = 0x00080000;
+    public const long WS_SYSMENU = 0x00080000, WS_CAPTION = 0x00C00000;
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);

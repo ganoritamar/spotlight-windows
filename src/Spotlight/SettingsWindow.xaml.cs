@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
         FolderList.ItemsSource = _folders;
         ResultsSlider.Value = settings.MaxResults;
         StartupBox.IsChecked = StartupManager.IsEnabled;
+        FullscreenBox.IsChecked = settings.IgnoreHotkeyInFullscreen;
         RefreshStatus();
 
         HotkeyBox.MouseLeftButtonUp += (_, _) => StartCapture();
@@ -254,6 +255,7 @@ public partial class SettingsWindow : Window
         var settings = new Settings
         {
             Hotkey = _hotkey,
+            IgnoreHotkeyInFullscreen = FullscreenBox.IsChecked == true,
             Folders = _folders.ToList(),
             ExcludeFolderNames = _original.ExcludeFolderNames,
             SkipDotFolders = _original.SkipDotFolders,
